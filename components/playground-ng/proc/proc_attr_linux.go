@@ -1,4 +1,4 @@
-// Copyright 2024 PingCAP, Inc.
+// Copyright 2020 PingCAP, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -10,16 +10,16 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+//go:build linux
+// +build linux
 
-package colorstr
+package proc
 
-import (
-	"testing"
-)
+import "syscall"
 
-func TestRequireEqualColorToken(t *testing.T) {
-	RequireEqualColorToken(t, "[red]hello", DefaultTokens.Color("[red]hello"))
-	RequireNotEqualColorToken(t, "[yellow]hello", DefaultTokens.Color("[red]hello"))
-	RequireEqualColorToken(t, "[red]hello[reset]", DefaultTokens.Color("[red]hello[reset]"))
-	RequireNotEqualColorToken(t, "[red]hello", DefaultTokens.Color("[red]hello[reset]"))
+// SysProcAttr to be use for every Process we start.
+var SysProcAttr = &syscall.SysProcAttr{
+	Pdeathsig: syscall.SIGKILL,
+	Setpgid:   true,
 }
