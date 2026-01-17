@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	cc "github.com/ivanpirog/coloredcobra"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tiup/components/playground-ng/proc"
 	"github.com/pingcap/tiup/pkg/environment"
@@ -121,24 +122,33 @@ func execute(state *cliState) error {
 		state = newCLIState()
 	}
 
+	arg0 := playgroundCLIArg0()
+
 	rootCmd := &cobra.Command{
 		Use: fmt.Sprintf("%s [version]", filepath.Base(os.Args[0])),
-		Long: `Bootstrap a TiDB cluster in your local host, the latest release version will be chosen
-if you don't specified a version.
+		Long: colorstr.Sprintf(`>_ [bold]TiUP Playground[reset] [dim](ng)[reset]
 
-Examples:
-  $ tiup playground-ng nightly                         # Start a TiDB nightly version local cluster
-  $ tiup playground-ng v5.0.1 --db 3 --pd 3 --kv 3     # Start a local cluster with 10 nodes
-  $ tiup playground-ng nightly --without-monitor       # Start a local cluster and disable monitor system
-  $ tiup playground-ng --pd.config ~/config/pd.toml    # Start a local cluster with specified configuration file
-  $ tiup playground-ng --db.binpath /xx/tidb-server    # Start a local cluster with component binary path
-  $ tiup playground-ng --tag xx                        # Start a local cluster with data dir named 'xx' and uncleaned after exit
-  $ tiup playground-ng -d --tag xx                    # Start a local cluster in background (daemon mode)
-  $ tiup playground-ng stop --tag xx                   # Stop the cluster started with --tag xx
-  $ tiup playground-ng stop-all                        # Stop all running playground-ng instances
-  $ tiup playground-ng ps                              # List all running playground-ng instances
-  $ tiup playground-ng --mode tikv-slim                # Start a local tikv only cluster (No TiDB or TiFlash Available)
-  $ tiup playground-ng --mode tikv-slim --kv 3 --pd 3  # Start a local tikv only cluster with 6 nodes`,
+Start and manage a TiDB cluster locally for development.
+
+[bold]Examples:[reset]
+
+  [dim]Start a cluster using latest release version:[reset]
+  [cyan]%[1]s[reset]
+
+  [dim]Start a nightly cluster:[reset]
+  [cyan]%[1]s nightly[reset]
+
+  [dim]Start a TiKV-only cluster:[reset]
+  [cyan]%[1]s --mode tikv-slim[reset]
+
+  [dim]Start a cluster and run in background:[reset]
+  [cyan]%[1]s -d[reset]
+
+  [dim]Start a tagged cluster (data will not be cleaned after exit):[reset]
+  [cyan]%[1]s --tag foo[reset]
+
+  [dim]Stop the specified cluster:[reset]
+  [cyan]%[1]s stop --tag foo[reset]`, arg0),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version.NewTiUPVersion().String(),
@@ -395,10 +405,43 @@ Examples:
 		color.NoColor = true
 	}
 
-	tui.AddColorFunctionsForCobra()
-	tui.BeautifyCobraUsageAndHelp(rootCmd)
+	cobra.AddTemplateFunc("pgCmdLine", func(useLine string) string {
+		return rewriteCobraUseLine(arg0, useLine)
+	})
+	cobra.AddTemplateFunc("pgCmdPath", func(commandPath string) string {
+		return rewriteCobraCommandPath(arg0, commandPath)
+	})
 
-	rootCmd.Flags().StringVar(&state.options.ShOpt.Mode, "mode", "tidb", fmt.Sprintf("tiup playground-ng mode: '%s', '%s', '%s', '%s', '%s'", proc.ModeNormal, proc.ModeCSE, proc.ModeNextGen, proc.ModeDisAgg, proc.ModeTiKVSlim))
+	usageTpl := rootCmd.UsageTemplate()
+	usageTpl = strings.ReplaceAll(usageTpl, "{{.UseLine}}", "{{pgCmdLine .UseLine}}")
+	usageTpl = strings.ReplaceAll(usageTpl, "{{.CommandPath}}", "{{pgCmdPath .CommandPath}}")
+	rootCmd.SetUsageTemplate(usageTpl)
+
+	cc.Init(&cc.Config{
+		RootCmd:  rootCmd,
+		Headings: cc.Bold,
+		Commands: cc.Cyan + cc.Bold,
+	})
+
+	usageTpl = rootCmd.UsageTemplate()
+	usageTpl = strings.ReplaceAll(usageTpl, "(CommandStyle .CommandPath)", "(CommandStyle (pgCmdPath .CommandPath))")
+	rootCmd.SetUsageTemplate(usageTpl)
+
+	// Cobra's default version flag uses the command name derived from `Use`,
+	// which is the binary name (e.g. tiup-playground-ng). For standalone runs we
+	// want argv0 (e.g. bin/tiup-playground-ng); for TiUP component mode we want
+	// `tiup playground-ng[:<ver>]`.
+	rootCmd.InitDefaultHelpFlag()
+	if f := rootCmd.Flags().Lookup("help"); f != nil {
+		f.Usage = fmt.Sprintf("help for %s", arg0)
+	}
+
+	rootCmd.InitDefaultVersionFlag()
+	if f := rootCmd.Flags().Lookup("version"); f != nil {
+		f.Usage = fmt.Sprintf("version for %s", arg0)
+	}
+
+	rootCmd.Flags().StringVar(&state.options.ShOpt.Mode, "mode", "tidb", fmt.Sprintf("%s mode: '%s', '%s', '%s', '%s', '%s'", arg0, proc.ModeNormal, proc.ModeCSE, proc.ModeNextGen, proc.ModeDisAgg, proc.ModeTiKVSlim))
 	rootCmd.Flags().StringVar(&state.options.ShOpt.PDMode, "pd.mode", "pd", "PD mode: 'pd', 'ms'")
 	rootCmd.Flags().StringVar(&state.options.ShOpt.CSE.S3Endpoint, "cse.s3_endpoint", "http://127.0.0.1:9000",
 		fmt.Sprintf("Object store URL for --mode=%s, --mode=%s, --mode=%s", proc.ModeCSE, proc.ModeDisAgg, proc.ModeNextGen))
@@ -930,7 +973,7 @@ var _ repository.DownloadProgress = (*repoDownloadProgress)(nil)
 var _ repository.DownloadProgressReporter = (*repoDownloadProgress)(nil)
 
 func main() {
-	tui.RegisterArg0("tiup playground-ng")
+	tui.RegisterArg0(playgroundCLIArg0())
 
 	state := newCLIState()
 
