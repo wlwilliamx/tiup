@@ -21,6 +21,7 @@ import (
 
 	"github.com/pingcap/tiup/components/playground-ng/proc"
 	pgservice "github.com/pingcap/tiup/components/playground-ng/service"
+	"github.com/pingcap/tiup/pkg/repository"
 	tuiv2output "github.com/pingcap/tiup/pkg/tuiv2/output"
 	progressv2 "github.com/pingcap/tiup/pkg/tuiv2/progress"
 )
@@ -96,6 +97,29 @@ func (p *Playground) terminalWriter() io.Writer {
 		return p.ui.Writer()
 	}
 	return tuiv2output.Stdout.Get()
+}
+
+// downloadProgressFactory returns a factory that creates a fresh progress
+// reporter for each concurrent download.
+//
+// We intentionally return a factory instead of exposing `p.downloadProgress`
+// directly because repoDownloadProgress keeps mutable "current download" state.
+// Parallel downloads must use independent instances (see repoDownloadProgress.Clone).
+func (p *Playground) downloadProgressFactory() func() repository.DownloadProgress {
+	if p == nil {
+		return nil
+	}
+
+	p.progressMu.Lock()
+	base := p.downloadProgress
+	p.progressMu.Unlock()
+	if base == nil {
+		return nil
+	}
+
+	return func() repository.DownloadProgress {
+		return base.Clone()
+	}
 }
 
 var errProcessGroupClosed = fmt.Errorf("process group closed")
